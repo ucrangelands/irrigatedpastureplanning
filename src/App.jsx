@@ -507,8 +507,8 @@ export default function App() {
       <div className="container" ref={reportRef}>
         <div className="card hero">
           <div>
-            <h1 style={{ margin: '0 0 8px 0' }}>IPNMP standalone app</h1>
-            <div className="small">Standalone Vite + React version of the UC Rangelands irrigated pasture nitrogen and water planning tool</div>
+            <h1 style={{ margin: '0 0 8px 0' }}>UC Rangelands Iirrigated Pasture Nitrogen and Water Planning App</h1>
+            <div className="small">Vite + React version of our irrigated pasture planning tool</div>
           </div>
           <div className="actions no-print">
             <button className="btn" onClick={printReport}>Print report</button>
@@ -653,9 +653,9 @@ export default function App() {
             </div>
 
             <div className="card summary-card">
-              <div><strong>Planning summary</strong></div>
+              <div><strong>Pasture Management Summary</strong></div>
               <div className="tiny" style={{ marginTop: 8, marginBottom: 10 }}>
-                Vite deployment testing version. No guarantee or promise of accuracy.
+                Vite deployment testing version subject to change, including the accuracy of generated results. Please reach out to djeastburn@ucdavis.edu or your local UC Cooperative Extension Advisor for further assistance.
               </div>
               <div className="small">Pasture area: {round(num(values.pastureAcres), 1)} acres</div>
               <div className="small">Water applied: {round(results.waterAppliedAcFtYear, 1)} ac-ft/year ({round(results.irrigationInches, 1)} inches)</div>
