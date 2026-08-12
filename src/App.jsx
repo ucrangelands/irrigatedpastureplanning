@@ -416,6 +416,63 @@ function NitrogenBudgetChart({ results }) {
 )
 }
 
+function WaterBudgetChart({ results }) {
+  const data = [
+    {
+      group: 'Water Applied',
+      value: round(results.irrigationInches, 1),
+    },
+    {
+      group: 'Irrigation Season ETo',
+      value: round(results.etoDemand, 1),
+    },
+  ]
+
+  return (
+    <div style={{ width: '100%' }}>
+      <div style={{ width: '100%', height: 300 }}>
+        <ResponsiveContainer>
+          <BarChart
+            data={data}
+            margin={{ top: 20, right: 20, left: 10, bottom: 20 }}
+            barCategoryGap="45%"
+          >
+            <CartesianGrid strokeDasharray="3 3" />
+
+            <XAxis
+              dataKey="group"
+              tick={{ fontSize: 12 }}
+            />
+
+            <YAxis
+              label={{
+                value: 'Water (inches)',
+                angle: -90,
+                position: 'insideLeft',
+                style: { textAnchor: 'middle' },
+              }}
+            />
+
+            <Tooltip
+              formatter={(value) => [`${value} inches`, '']}
+            />
+
+            <Bar
+              dataKey="value"
+              name="Water"
+              fill="#0ea5e9"
+              radius={[4, 4, 0, 0]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+
+
+
 export default function App() {
   const reportRef = useRef(null)
   const [values, setValues] = useState(() => {
@@ -624,8 +681,26 @@ export default function App() {
             <div className="card">
               <h2 style={{ marginTop: 0, marginBottom: 6 }}>Results</h2>
               <div className="small" style={{ marginBottom: 16 }}>This information can be used to complete an Irrigation and Nitrogen Management Plan worksheet.</div>
-              <div className="no-print"><NitrogenBudgetChart results={results} /></div>
-              <h3 style={{ marginBottom: 8 }}>Irrigated Pasture and Herd Nitrogen Management Planning</h3>
+<div className="no-print">
+  <NitrogenBudgetChart results={results} />
+</div>
+
+<div className="divider">
+  <h3 style={{ marginTop: 0, marginBottom: 6 }}>
+    Irrigation Water Balance
+  </h3>
+
+  <div className="small" style={{ marginBottom: 12 }}>
+    Comparison of annual irrigation water applied with estimated
+    reference evapotranspiration (ETo) during the selected irrigation season.
+  </div>
+
+  <WaterBudgetChart results={results} />
+</div>
+
+<h3 style={{ marginBottom: 8 }}>
+  Irrigated Pasture and Herd Nitrogen Management Planning
+</h3>
               <div className="small" style={{ marginBottom: 16 }}>Below is summary of irrigated pasture management and herd characteristics.</div>
 
               <ResultRow label="Crop" value="Irrigated pasture forage and livestock" units="" digits={0} />
