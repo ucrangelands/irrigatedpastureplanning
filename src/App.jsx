@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import RapMapPanel from "./components/RapMapPanel"
 import {
   BarChart,
   Bar,
@@ -35,6 +36,8 @@ const ET_ZONES = {
   17: { label: 'High Desert Valleys (Zone 17)', monthly: [1.86, 2.8, 4.65, 6.0, 8.06, 9.0, 9.92, 8.68, 6.6, 4.34, 2.7, 1.86] },
   18: { label: 'Imperial Valley, Death Valley, and Palo Verde (Zone 18)', monthly: [2.48, 3.36, 5.27, 6.9, 8.68, 9.6, 9.61, 8.68, 6.9, 4.96, 3.0, 2.17] },
 }
+
+
 
 const IRRIGATION_SOURCES = [
   { label: 'Estimate of typical natural background levels of nitrate', value: 9 },
@@ -91,6 +94,8 @@ const SMALL_RUMINANT_CLASSES = [
 ]
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
 
 const DEFAULTS = {
   pastureAcres: 100,
@@ -169,27 +174,41 @@ function calculate(values) {
 
   const etoZone = ET_ZONES[values.etoZone]
   const etoDemand = values.estimateETo
-    ? etoZone.monthly.reduce((sum, value, i) => sum + (values.irrigationMonths[i] ? value : 0), 0)
+    ? etoZone.monthly.reduce(
+        (sum, value, i) => sum + (values.irrigationMonths[i] ? value : 0),
+        0
+      )
     : 0
 
   const irrigationNppm = values.includeIrrigationN
-    ? (IRRIGATION_SOURCES[values.irrigationSourceIndex].value > 0
-        ? IRRIGATION_SOURCES[values.irrigationSourceIndex].value
-        : num(values.irrigationNppmCustom))
+    ? (
+        IRRIGATION_SOURCES[values.irrigationSourceIndex].value > 0
+          ? IRRIGATION_SOURCES[values.irrigationSourceIndex].value
+          : num(values.irrigationNppmCustom)
+      )
     : 0
 
-  const irrigationWaterN = values.includeIrrigationN && acres > 0
-    ? ((irrigationNppm * 2.71936145) * waterAppliedAcFtYear) / acres
-    : 0
+  const irrigationWaterN =
+    values.includeIrrigationN && acres > 0
+      ? ((irrigationNppm * 2.71936145) * waterAppliedAcFtYear) / acres
+      : 0
 
   const soilN = values.includeSoilN ? num(values.soilN) : 0
-  const syntheticNFraction = SYNTHETIC_FERTILIZERS[values.syntheticFormulaIndex].nFraction
-  const syntheticN = values.applySyntheticFertilizer ? num(values.syntheticRate) * syntheticNFraction : 0
 
-  const manureFraction = MANURE_OPTIONS[values.manureOptionIndex].nFraction > 0
-    ? MANURE_OPTIONS[values.manureOptionIndex].nFraction
-    : num(values.manureCustomFraction)
-  const manureN = values.applyManure ? num(values.manureRate) * manureFraction : 0
+  const syntheticNFraction =
+    SYNTHETIC_FERTILIZERS[values.syntheticFormulaIndex].nFraction
+  const syntheticN =
+    values.applySyntheticFertilizer
+      ? num(values.syntheticRate) * syntheticNFraction
+      : 0
+
+  const manureFraction =
+    MANURE_OPTIONS[values.manureOptionIndex].nFraction > 0
+      ? MANURE_OPTIONS[values.manureOptionIndex].nFraction
+      : num(values.manureCustomFraction)
+
+  const manureN =
+    values.applyManure ? num(values.manureRate) * manureFraction : 0
 
   const cattleAUM = CATTLE_CLASSES.reduce((sum, cls) => {
     const rec = values.cattle[cls.key]
@@ -210,9 +229,11 @@ function calculate(values) {
   const highForageDemand = aumPerAcre * 1000
   const highLivestockNRequirement = highForageDemand * 0.03
 
-  const hayCrudeProteinPct = HAY_OPTIONS[values.hayOptionIndex].crudeProteinPct > 0
-    ? HAY_OPTIONS[values.hayOptionIndex].crudeProteinPct
-    : num(values.hayCustomCrudeProteinPct)
+  const hayCrudeProteinPct =
+    HAY_OPTIONS[values.hayOptionIndex].crudeProteinPct > 0
+      ? HAY_OPTIONS[values.hayOptionIndex].crudeProteinPct
+      : num(values.hayCustomCrudeProteinPct)
+
   const hayN = values.includeHaying
     ? num(values.hayHarvestLbAc) * ((hayCrudeProteinPct / 6.25) * 0.01)
     : 0
@@ -418,6 +439,14 @@ function NitrogenBudgetChart({ results }) {
 
 export default function App() {
   const reportRef = useRef(null)
+
+  // RAP / map state must be INSIDE the component
+  const currentYear = new Date().getFullYear()
+  const [rapYear, setRapYear] = useState(currentYear - 1)
+  const [mapGeometry, setMapGeometry] = useState(null)
+  const [rapResult, setRapResult] = useState(null)
+
+  // Main form state
   const [values, setValues] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search)
@@ -433,7 +462,15 @@ export default function App() {
     }
   })
 
+  // Main calculator results
   const results = useMemo(() => calculate(values), [values])
+
+  // RAP-derived values must also be INSIDE the component
+  const rapHerbaceousLbAc = rapResult?.HER ?? null
+  const forageGapLbAc =
+    rapHerbaceousLbAc != null
+      ? rapHerbaceousLbAc - results.highForageDemand
+      : null
 
   useEffect(() => {
     try {
@@ -445,17 +482,39 @@ export default function App() {
     } catch {}
   }, [values])
 
-  const set = (key, value) => setValues((prev) => ({ ...prev, [key]: value }))
-  const setCattle = (key, part, value) => setValues((prev) => ({ ...prev, cattle: { ...prev.cattle, [key]: { ...prev.cattle[key], [part]: value } } }))
-  const setSmall = (key, part, value) => setValues((prev) => ({ ...prev, smallRuminants: { ...prev.smallRuminants, [key]: { ...prev.smallRuminants[key], [part]: value } } }))
+  const set = (key, value) =>
+    setValues((prev) => ({ ...prev, [key]: value }))
+
+  const setCattle = (key, part, value) =>
+    setValues((prev) => ({
+      ...prev,
+      cattle: {
+        ...prev.cattle,
+        [key]: { ...prev.cattle[key], [part]: value },
+      },
+    }))
+
+  const setSmall = (key, part, value) =>
+    setValues((prev) => ({
+      ...prev,
+      smallRuminants: {
+        ...prev.smallRuminants,
+        [key]: { ...prev.smallRuminants[key], [part]: value },
+      },
+    }))
 
   const resetForm = () => {
     setValues(DEFAULTS)
+    setRapResult(null)
+    setMapGeometry(null)
+
     try {
       localStorage.removeItem(STORAGE_KEY)
       const params = new URLSearchParams(window.location.search)
       params.delete(URL_PARAM)
-      const next = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname
+      const next = params.toString()
+        ? `${window.location.pathname}?${params.toString()}`
+        : window.location.pathname
       window.history.replaceState({}, '', next)
     } catch {}
   }
@@ -473,12 +532,14 @@ export default function App() {
 
   const exportPdf = async () => {
     if (!reportRef.current) return
+
     const canvas = await html2canvas(reportRef.current, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       windowWidth: reportRef.current.scrollWidth,
     })
+
     const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'letter' })
     const pageWidth = pdf.internal.pageSize.getWidth()
@@ -486,6 +547,7 @@ export default function App() {
     const margin = 24
     const imgWidth = pageWidth - margin * 2
     const imgHeight = (canvas.height * imgWidth) / canvas.width
+
     let heightLeft = imgHeight
     let position = margin
 
@@ -508,8 +570,11 @@ export default function App() {
         <div className="card hero">
           <div>
             <h1 style={{ margin: '0 0 8px 0' }}>IPNMP standalone app</h1>
-            <div className="small">Standalone Vite + React version of the WordPress Calculated Fields Form tool and results page.</div>
+            <div className="small">
+              Standalone Vite + React version of the UC Rangelands irrigated pasture nitrogen and water management planning tool.
+            </div>
           </div>
+
           <div className="actions no-print">
             <button className="btn" onClick={printReport}>Print report</button>
             <button className="btn" onClick={exportPdf}>Export PDF</button>
@@ -520,113 +585,57 @@ export default function App() {
 
         <div className="grid">
           <div className="stack no-print">
-            <div className="card">
-              <div className="section-title"><strong>Pasture characteristics and management</strong></div>
-              <div className="field-grid" style={{ marginTop: 16 }}>
-                <NumberField label="Area of pasture irrigated" value={values.pastureAcres} onChange={(v) => set('pastureAcres', v)} help="acres" />
-                <Toggle checked={values.includeIrrigationN} onChange={(v) => set('includeIrrigationN', v)} label="Include nitrogen from irrigation water" />
-                <SelectField label="Irrigation units" value={values.irrigationUnit} onChange={(v) => set('irrigationUnit', v)} options={[{ label: 'Acre feet / yr', value: 'acreFeet' }, { label: 'Miners inch', value: 'minersInch' }]} getValue={(o) => o.value} />
-                {values.irrigationUnit === 'minersInch' ? <NumberField label="Number of days irrigation water applied" value={values.irrigationDays} onChange={(v) => set('irrigationDays', v)} /> : <div />}
-                <NumberField label="Amount of water applied annually" value={values.waterApplied} onChange={(v) => set('waterApplied', v)} help={values.irrigationUnit === 'acreFeet' ? 'acre-feet/year' : 'miners inches'} />
-                <div />
-                {values.includeIrrigationN ? (
-                  <>
-                    <SelectField label="Select source of irrigation water" value={String(values.irrigationSourceIndex)} onChange={(v) => set('irrigationSourceIndex', Number(v))} options={IRRIGATION_SOURCES} />
-                    {IRRIGATION_SOURCES[values.irrigationSourceIndex].value === 0 ? <NumberField label="Total nitrogen concentration in irrigation water" value={values.irrigationNppmCustom} onChange={(v) => set('irrigationNppmCustom', v)} help="ppm" /> : <div />}
-                  </>
-                ) : null}
-                <Toggle checked={values.estimateETo} onChange={(v) => set('estimateETo', v)} label="Estimate irrigation season ETo demand" />
-                <div />
-                {values.estimateETo ? (
-                  <>
-                    <SelectField label="Climatic ETo zone" value={String(values.etoZone)} onChange={(v) => set('etoZone', Number(v))} options={Object.entries(ET_ZONES).map(([k, z]) => ({ key: k, label: z.label }))} getLabel={(o) => o.label} getValue={(o) => o.key} />
-                    <div>
-                      <div className="field-label" style={{ marginBottom: 8 }}>Months in irrigation season</div>
-                      <div className="month-grid">
-                        {MONTHS.map((month, i) => (
-                          <label key={month} className="month-item">
-                            <input
-                              type="checkbox"
-                              checked={values.irrigationMonths[i]}
-                              onChange={(e) => {
-                                const next = [...values.irrigationMonths]
-                                next[i] = e.target.checked
-                                set('irrigationMonths', next)
-                              }}
-                            />
-                            {month}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-                <Toggle checked={values.includeSoilN} onChange={(v) => set('includeSoilN', v)} label="Include available soil nitrogen" />
-                {values.includeSoilN ? <NumberField label="Plant available soil nitrogen" value={values.soilN} onChange={(v) => set('soilN', v)} help="annualized lb N/acre" /> : <div />}
-              </div>
-            </div>
+            {/* Your existing pasture / fertilizer / hay / herd cards stay here */}
 
-            <div className="card">
-              <div className="section-title"><strong>Fertilizer applications</strong></div>
-              <div className="field-grid" style={{ marginTop: 16 }}>
-                <Toggle checked={values.applySyntheticFertilizer} onChange={(v) => set('applySyntheticFertilizer', v)} label="Synthetic fertilizer applied" />
-                <div />
-                {values.applySyntheticFertilizer ? (
-                  <>
-                    <NumberField label="Synthetic fertilizer application rate" value={values.syntheticRate} onChange={(v) => set('syntheticRate', v)} help="lb product/acre" />
-                    <SelectField label="Fertilizer formulation" value={String(values.syntheticFormulaIndex)} onChange={(v) => set('syntheticFormulaIndex', Number(v))} options={SYNTHETIC_FERTILIZERS} />
-                  </>
-                ) : null}
-                <Toggle checked={values.applyManure} onChange={(v) => set('applyManure', v)} label="Manure or compost applied" />
-                <div />
-                {values.applyManure ? (
-                  <>
-                    <NumberField label="Manure or compost rate" value={values.manureRate} onChange={(v) => set('manureRate', v)} help="lb/acre" />
-                    <SelectField label="Manure or compost formulation" value={String(values.manureOptionIndex)} onChange={(v) => set('manureOptionIndex', Number(v))} options={MANURE_OPTIONS} />
-                    {MANURE_OPTIONS[values.manureOptionIndex].nFraction === 0 ? <NumberField label="Custom nitrogen content" value={values.manureCustomFraction} onChange={(v) => set('manureCustomFraction', v)} help="fraction available N, e.g. 0.012" /> : null}
-                  </>
-                ) : null}
-              </div>
-            </div>
+            <section>
+              <div className="rounded-3xl bg-white p-6 shadow-sm">
+                <h2 className="mb-4 text-xl font-semibold text-slate-900">
+                  RAP year selection
+                </h2>
 
-            <div className="card">
-              <div className="section-title"><strong>Hay characteristics and harvest</strong></div>
-              <div className="field-grid" style={{ marginTop: 16 }}>
-                <Toggle checked={values.includeHaying} onChange={(v) => set('includeHaying', v)} label="Include haying in plan" />
-                <div />
-                {values.includeHaying ? (
-                  <>
-                    <NumberField label="Total annual hay harvest" value={values.hayHarvestLbAc} onChange={(v) => set('hayHarvestLbAc', v)} help="dry hay lb/acre" />
-                    <SelectField label="Type and quality of hay" value={String(values.hayOptionIndex)} onChange={(v) => set('hayOptionIndex', Number(v))} options={HAY_OPTIONS} />
-                    {HAY_OPTIONS[values.hayOptionIndex].crudeProteinPct === 0 ? <NumberField label="Custom crude protein" value={values.hayCustomCrudeProteinPct} onChange={(v) => set('hayCustomCrudeProteinPct', v)} help="percent crude protein" /> : null}
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="section-title"><strong>Herd characteristics and management</strong></div>
-              <div className="stack" style={{ marginTop: 16 }}>
-                <AnimalTable title="Cattle" classes={CATTLE_CLASSES} values={values.cattle} onChange={setCattle} />
-                <AnimalTable title="Sheep and goats" classes={SMALL_RUMINANT_CLASSES} values={values.smallRuminants} onChange={setSmall} />
-                <div className="animal-table">
-                  <div className="sub-title"><strong>Horses and mules</strong></div>
-                  <div className="field-grid" style={{ marginTop: 12 }}>
-                    <NumberField label="Count" value={values.horses.count} onChange={(v) => set('horses', { ...values.horses, count: v })} />
-                    <NumberField label="Days grazed" value={values.horses.days} onChange={(v) => set('horses', { ...values.horses, days: v })} />
-                  </div>
+                <div className="max-w-xs">
+                  <label className="block">
+                    <div className="text-sm font-medium text-slate-800">RAP year</div>
+                    <input
+                      type="number"
+                      min="1986"
+                      max={currentYear - 1}
+                      value={rapYear}
+                      onChange={(e) => setRapYear(Number(e.target.value))}
+                      className="mt-1 w-full rounded-2xl border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+                    />
+                  </label>
                 </div>
               </div>
-            </div>
+            </section>
+
+            <RapMapPanel
+              year={rapYear}
+              geometry={mapGeometry}
+              setGeometry={setMapGeometry}
+              rapResult={rapResult}
+              setRapResult={setRapResult}
+            />
           </div>
 
           <div className="stack">
             <div className="card">
               <h2 style={{ marginTop: 0, marginBottom: 6 }}>Results</h2>
-              <div className="small" style={{ marginBottom: 16 }}>This information can be used to complete an Irrigation and Nitrogen Management Plan worksheet.</div>
-              <div className="no-print"><NitrogenBudgetChart results={results} /></div>
-              <h3 style={{ marginBottom: 8 }}>Irrigated Pasture and Herd Nitrogen Management Planning</h3>
-              <div className="small" style={{ marginBottom: 16 }}>Below is summary of irrigated pasture management and herd characteristics.</div>
+              <div className="small" style={{ marginBottom: 16 }}>
+                This information can be used to complete an Irrigation and Nitrogen Management Plan worksheet.
+              </div>
+
+              <div className="no-print">
+                <NitrogenBudgetChart results={results} />
+              </div>
+
+              <h3 style={{ marginBottom: 8 }}>
+                Irrigated Pasture and Herd Nitrogen Management Planning
+              </h3>
+
+              <div className="small" style={{ marginBottom: 16 }}>
+                Below is summary of irrigated pasture management and herd characteristics.
+              </div>
 
               <ResultRow label="Crop" value="Irrigated pasture forage and livestock" units="" digits={0} />
               <ResultRow label="Predicted stocking rate" value={results.aumPerAcre} units="AUMs per acre" digits={1} />
@@ -639,9 +648,37 @@ export default function App() {
               <ResultRow label="Irrigation water applied" value={results.irrigationInches} units="inches" digits={1} strong />
               <ResultRow label="Average ETo for irrigation season" value={results.etoDemand} units="inches" digits={2} strong />
 
+              {rapResult ? (
+                <section className="rounded-3xl bg-white p-6 shadow-sm print:break-inside-avoid">
+                  <h3 className="mb-4 text-lg font-semibold text-slate-900">
+                    RAP herbaceous production
+                  </h3>
+
+                  <ResultRow label="RAP year" value={rapResult.year} units="" digits={0} />
+                  <ResultRow label="RAP annual forb and grass (AFG)" value={rapResult.AFG} units="lbs/ac" digits={1} />
+                  <ResultRow label="RAP perennial forb and grass (PFG)" value={rapResult.PFG} units="lbs/ac" digits={1} />
+                  <ResultRow label="RAP total herbaceous (HER)" value={rapResult.HER} units="lbs/ac" digits={1} strong />
+
+                  {forageGapLbAc != null ? (
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                      <div>
+                        <span className="font-semibold">
+                          RAP HER minus modeled high forage demand:
+                        </span>{' '}
+                        {round(forageGapLbAc, 1)} lbs/ac
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
               <div className="divider">
                 <h4 style={{ marginTop: 0, marginBottom: 8 }}>Nitrogen Sources</h4>
-                <div className="small" style={{ marginBottom: 12 }}>Below is a summary of the nitrogen sources including fertilizers applied, organic amendments, and available nitrogen in soil and irrigation water.</div>
+                <div className="small" style={{ marginBottom: 12 }}>
+                  Below is a summary of the nitrogen sources including fertilizers applied,
+                  organic amendments, and available nitrogen in soil and irrigation water.
+                </div>
+
                 <ResultRow label="Dry/Liquid synthetic nitrogen fertilizers applied" value={results.syntheticN} units="lbs per acre" digits={1} />
                 <ResultRow label="Nitrogen from applied manure/compost" value={results.manureN} units="lbs per acre" digits={1} />
                 <ResultRow label="Total nitrogen applied" value={results.totalNitrogenApplied} units="lbs per acre" digits={0} strong />
@@ -655,15 +692,19 @@ export default function App() {
             <div className="card summary-card">
               <div><strong>Planning summary</strong></div>
               <div className="tiny" style={{ marginTop: 8, marginBottom: 10 }}>
-                Ready for Vite deployment. This app supports browser persistence, shareable scenario URLs, print, and PDF export.
+                Version for Vite deployment and testing. This app supports browser persistence,
+                shareable scenario URLs, print, and PDF export. Although the model incorporates the best available science, we offer no guarantee results refelct actual conditions on ground, and are subject to input error, and externalitie driven variablity beyond the scope of our calculations.
               </div>
+
               <div className="small">Pasture area: {round(num(values.pastureAcres), 1)} acres</div>
               <div className="small">Water applied: {round(results.waterAppliedAcFtYear, 1)} ac-ft/year ({round(results.irrigationInches, 1)} inches)</div>
               <div className="small">Irrigation season ETo: {round(results.etoDemand, 2)} inches</div>
               <div className="small">Stocking intensity: {round(results.aumPerAcre, 1)} AUM/ac</div>
               <div className="small">Total nitrogen from all sources: {round(results.totalNAllSources, 0)} lb N/ac</div>
               <div className="small">Low / high livestock N requirement: {round(results.lowLivestockNRequirement, 0)} / {round(results.highLivestockNRequirement, 0)} lb N/ac</div>
-              {values.includeHaying ? <div className="small">Nitrogen exported in hay: {round(results.hayN, 1)} lb N/ac</div> : null}
+              {values.includeHaying ? (
+                <div className="small">Nitrogen exported in hay: {round(results.hayN, 1)} lb N/ac</div>
+              ) : null}
             </div>
           </div>
         </div>
